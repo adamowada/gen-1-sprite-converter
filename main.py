@@ -3,33 +3,43 @@ from PIL import Image, ImageOps
 from rich.console import Console
 from rich.prompt import Prompt
 
+
 console = Console()
 
-# Function to convert sprite to correct dimensions and format for Gen 1 games
+
+# Function to convert sprite to correct dimensions and format for Gen 1 games, preserving transparency
 def convert_sprite(input_path, output_path, sprite_type="front"):
     # Open the input image
-    img = Image.open(input_path)
+    img = Image.open(input_path).convert("RGBA")  # Ensures we have an alpha channel
+
+    # Separate the image into RGB and Alpha channels
+    r, g, b, alpha = img.split()
+
+    # Convert the RGB to grayscale (we apply grayscale only on the RGB channels)
+    img_rgb = Image.merge("RGB", (r, g, b))
+    img_grayscale = img_rgb.convert('L')
 
     # Determine dimensions based on the sprite type
     if sprite_type == "front":
         new_size = (56, 56)  # Front sprites are 56x56
     elif sprite_type == "back":
-        new_size = (32, 32)  # Back sprites are 48x48
+        new_size = (32, 32)  # Back sprites are 32x32
     else:
         raise ValueError("Invalid sprite_type. Choose 'front' or 'back'.")
 
     # Resize the image to the correct dimensions (LANCZOS is the new equivalent of ANTIALIAS)
-    img_resized = img.resize(new_size, Image.Resampling.LANCZOS)
+    img_resized = img_grayscale.resize(new_size, Image.Resampling.LANCZOS)
 
-    # Convert the image to grayscale
-    img_grayscale = img_resized.convert('L')
+    # Reduce the resized grayscale image to 4 shades (posterization after resizing)
+    img_posterized = ImageOps.posterize(img_resized, 2)  # 2 bits = 4 shades
 
-    # Reduce the grayscale image to 4 shades
-    img_posterized = ImageOps.posterize(img_grayscale, 2)  # 2 bits = 4 shades
+    # Merge back the alpha channel to retain transparency
+    img_final = Image.merge("LA", (img_posterized, alpha.resize(new_size)))
 
     # Save the resulting image
-    img_posterized.save(output_path)
+    img_final.save(output_path, "PNG")
     console.print(f"[bold green]Converted {sprite_type} sprite saved as {output_path}[/bold green]")
+
 
 # CLI and menu using Click and Rich
 @click.command()
@@ -59,6 +69,7 @@ def menu():
     else:
         console.print("[bold red]Invalid choice, please select 1, 2, or 3.[/bold red]")
         menu()
+
 
 if __name__ == "__main__":
     menu()
