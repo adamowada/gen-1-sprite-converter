@@ -1,5 +1,5 @@
 import click
-from PIL import Image, ImageOps
+from PIL import Image
 from rich.console import Console
 from rich.prompt import Prompt
 
@@ -7,17 +7,46 @@ from rich.prompt import Prompt
 console = Console()
 
 
-# Function to convert sprite to correct dimensions and format for Gen 1 games, preserving transparency
+# Function to map image pixels to white, light gray, dark gray, and black
+def map_colors(img):
+    # Define thresholds for remapping colors
+    white = 255
+    light_gray = 170
+    dark_gray = 85
+    black = 0
+
+    # Load image data for processing
+    img_data = img.load()
+
+    # Iterate over every pixel in the image
+    for y in range(img.height):
+        for x in range(img.width):
+            pixel_value = img_data[x, y]
+            if pixel_value >= 192:
+                img_data[x, y] = white  # White
+            elif pixel_value >= 128:
+                img_data[x, y] = light_gray  # Light gray
+            elif pixel_value >= 64:
+                img_data[x, y] = dark_gray  # Dark gray
+            else:
+                img_data[x, y] = black  # Black
+
+    return img
+
+
+# Function to convert sprite to correct dimensions and format for Gen 1 games
 def convert_sprite(input_path, output_path, sprite_type="front"):
-    # Open the input image
-    img = Image.open(input_path).convert("RGBA")  # Ensures we have an alpha channel
+    # Open the input image and ensure RGBA (with alpha channel)
+    img = Image.open(input_path).convert("RGBA")
 
-    # Separate the image into RGB and Alpha channels
-    r, g, b, alpha = img.split()
+    # Create a white background image the same size as the input
+    white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))  # Fully white background
 
-    # Convert the RGB to grayscale (we apply grayscale only on the RGB channels)
-    img_rgb = Image.merge("RGB", (r, g, b))
-    img_grayscale = img_rgb.convert('L')
+    # Paste the input image on top of the white background, which fills transparent pixels with white
+    img_with_white_bg = Image.alpha_composite(white_bg, img)
+
+    # Convert the image to grayscale
+    img_grayscale = img_with_white_bg.convert('L')
 
     # Determine dimensions based on the sprite type
     if sprite_type == "front":
@@ -27,17 +56,14 @@ def convert_sprite(input_path, output_path, sprite_type="front"):
     else:
         raise ValueError("Invalid sprite_type. Choose 'front' or 'back'.")
 
-    # Resize the image to the correct dimensions (LANCZOS is the new equivalent of ANTIALIAS)
+    # Resize the image to the correct dimensions
     img_resized = img_grayscale.resize(new_size, Image.Resampling.LANCZOS)
 
-    # Reduce the resized grayscale image to 4 shades (posterization after resizing)
-    img_posterized = ImageOps.posterize(img_resized, 2)  # 2 bits = 4 shades
+    # Map pixels to the four colors: white, light gray, dark gray, and black
+    img_mapped = map_colors(img_resized)
 
-    # Merge back the alpha channel to retain transparency
-    img_final = Image.merge("LA", (img_posterized, alpha.resize(new_size)))
-
-    # Save the resulting image
-    img_final.save(output_path, "PNG")
+    # Save the resulting image as PNG
+    img_mapped.save(output_path, "PNG")
     console.print(f"[bold green]Converted {sprite_type} sprite saved as {output_path}[/bold green]")
 
 
